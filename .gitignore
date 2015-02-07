@@ -1,1 +1,3 @@
 automoderator.cfg
+*.*~
+*.pyc
