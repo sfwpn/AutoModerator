@@ -464,8 +464,8 @@ class Condition(object):
         session.commit()
 
         item_time = datetime.utcfromtimestamp(item.created_utc)
-        logging.info('Matched {0}, actions: {1} (age: {2})'
-                     .format(get_permalink(item).encode('ascii', 'ignore'),
+        logging.info(u'Matched {0}, actions: {1} (age: {2})'
+                     .format(get_permalink(item),
                              log_actions,
                              datetime.utcnow() - item_time))
 
@@ -967,7 +967,9 @@ def check_items(queue, items, stop_time, sr_dict, cond_dict):
 
         item_count += 1
 
-        logging.debug('Checking item %s', get_permalink(item))
+        logging.debug(u'Checking {0} old item {1}'
+                      .format(datetime.utcnow() - datetime.utcfromtimestamp(item.created_utc),
+                              get_permalink(item)))
 
         try:
             # check removal conditions, stop checking if any matched
