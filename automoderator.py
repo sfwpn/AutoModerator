@@ -344,22 +344,27 @@ class Condition(object):
                 compare = rank_values[compare]
 
             if user:
-                if attr == 'rank':
-                    value = rank_values[get_user_rank(user, item.subreddit)]
-                elif attr == 'account_age':
-                    user_date = datetime.utcfromtimestamp(user.created_utc)
-                    value = (datetime.utcnow() - user_date).days
-                elif attr == 'combined_karma':
-                    value = user.link_karma + user.comment_karma
-                else:
-                    try:
+                try:
+                    if attr == 'rank':
+                        value = rank_values[get_user_rank(user, item.subreddit)]
+                    elif attr == 'account_age':
+                        user_date = datetime.utcfromtimestamp(user.created_utc)
+                        value = (datetime.utcnow() - user_date).days
+                    elif attr == 'combined_karma':
+                        value = user.link_karma + user.comment_karma
+                    else:
                         value = getattr(user, attr, 0)
-                    except HTTPError as e:
-                        if e.response.status_code == 404:
-                            # user is shadowbanned, never satisfies conditions
-                            return False
-                        else:
-                            raise
+                except HTTPError as e:
+                    if e.response.status_code == 404:
+                        # user is shadowbanned, never satisfies conditions
+                        logging.debug("User /u/{} has been shadowbanned or deleted their account."
+                                      .format(user.name))
+                        return False
+                    else:
+                        # Non-404 probably means temporary reddit server availability issues
+                        # Should probably find a more elegant way to re-check here instead
+                        # of raising an error and looping.
+                        raise
             else:
                 value = 0
 
