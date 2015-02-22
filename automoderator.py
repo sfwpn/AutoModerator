@@ -14,6 +14,8 @@ from sqlalchemy.orm.exc import NoResultFound
 from models import cfg_file, path_to_cfg, session
 from models import Log, StandardCondition, Subreddit
 
+import sys, traceback
+
 # global reddit session
 r = None
 
@@ -141,10 +143,10 @@ class Condition(object):
 
             for field in self.trimmed_key(key).split('+'):
                 match_fields.add(field)
-        
+
         # if type wasn't defined, set based on fields being matched against
         if not getattr(self, 'type', None):
-            if (len(match_fields) > 0 and 
+            if (len(match_fields) > 0 and
                 all(f in ('title', 'domain', 'url',
                            'media_user', 'media_title', 'media_description',
                            'media_author_url')
@@ -192,7 +194,7 @@ class Condition(object):
 
     def check_item(self, item):
         """Checks an item against the condition.
-        
+
         Returns True if the condition is satisfied, False otherwise.
         """
         html_parser = HTMLParser.HTMLParser()
@@ -360,7 +362,7 @@ class Condition(object):
                             raise
             else:
                 value = 0
-                
+
             if operator == '<':
                 result = int(value) < int(compare)
             elif operator == '>':
@@ -380,7 +382,7 @@ class Condition(object):
 
     def execute_actions(self, item, match):
         """Performs the action(s) for the condition.
-        
+
         Also sends any comment/messages (if set) and creates a log entry.
         """
         if self.action or self.comment or self.modmail or self.message:
@@ -413,7 +415,7 @@ class Condition(object):
                 item.sticky()
 
         # set flairs
-        if (isinstance(item, praw.objects.Submission) and 
+        if (isinstance(item, praw.objects.Submission) and
                 (self.link_flair_text or self.link_flair_class)):
             text = replace_placeholders(self.link_flair_text, item, match)
             css_class = replace_placeholders(self.link_flair_class, item, match)
@@ -668,7 +670,7 @@ def validate_keys(check):
     """Checks if all the keys in the condition are valid."""
     # check top-level keys
     valid_keys = set(Condition._match_targets +
-                     Condition._defaults.keys() + 
+                     Condition._defaults.keys() +
                      ['standard', 'type'])
     for key in check:
         key = key.lstrip('~')
@@ -790,7 +792,7 @@ def process_messages():
     invite_srs = set()
     sleep_after = False
 
-    logging.debug('Checking messages')
+    logging.info('Checking messages')
 
     try:
         for message in r.get_inbox():
@@ -865,6 +867,7 @@ def process_messages():
 
     except Exception as e:
         logging.error('ERROR: {0}'.format(e))
+        logging.debug(traceback.format_exc())
         raise
     finally:
         # update cfg with new last_message value
@@ -928,7 +931,7 @@ def check_items(queue, items, stop_time, sr_dict, cond_dict):
     start_time = time()
     last_updates = {}
 
-    logging.debug('Checking {0} queue'.format(queue))
+    logging.info('Checking {0} queue'.format(queue))
 
     bot_username = cfg_file.get('reddit', 'username')
     for item in items:
@@ -967,7 +970,7 @@ def check_items(queue, items, stop_time, sr_dict, cond_dict):
 
         item_count += 1
 
-        logging.debug(u'Checking {0} old item {1}'
+        logging.info(u'Checking {0} old item {1}'
                       .format(datetime.utcnow() - datetime.utcfromtimestamp(item.created_utc),
                               get_permalink(item)))
 
@@ -992,13 +995,16 @@ def check_items(queue, items, stop_time, sr_dict, cond_dict):
             raise
         except Exception as e:
             logging.error('ERROR: {0}'.format(e))
+            logging.debug(traceback.format_exc())
 
     # Update "last_" entries in db
+    logging.debug("Updating subreddit last_* values:\n")
     for sr in last_updates:
+        logging.debug("/r/{0}: {1} = {2}".format(sr, 'last_'+queue, last_updates[sr]))
         setattr(sr_dict[sr], 'last_'+queue, last_updates[sr])
     session.commit()
 
-    logging.debug('Checked {0} items in {1}'
+    logging.info('Checked {0} items in {1}'
                  .format(item_count, elapsed_since(start_time)))
 
 
@@ -1035,10 +1041,10 @@ def check_conditions(subreddit, item, conditions, stop_after_match=False):
         # don't check remove/spam/report conditions on posts made by mods
         if (condition.moderators_exempt and
                 condition.action in ('remove', 'spam', 'report') and
-                item.author and 
+                item.author and
                 get_user_rank(item.author, item.subreddit) == 'moderator'):
             continue
-                
+
         # never remove anything if it's been approved by another mod
         if (condition.action in ('remove', 'spam') and
                 item.approved_by and
@@ -1072,7 +1078,7 @@ def check_conditions(subreddit, item, conditions, stop_after_match=False):
                     performed_actions.add(condition.action)
                 performed_yaml.add(condition.yaml)
 
-            logging.debug('{0}\n  Result {1} in {2}'
+            logging.trace('{0}\n  Result {1} in {2}'
                           .format(condition.yaml,
                                   match,
                                   elapsed_since(start_time)))
@@ -1081,7 +1087,8 @@ def check_conditions(subreddit, item, conditions, stop_after_match=False):
                 HTTPError) as e:
             raise
         except Exception as e:
-            logging.error('ERROR: {0}\n{1}'.format(e, condition.yaml))
+            logging.error(u'ERROR: {0}\n{1}'.format(e, condition.yaml))
+            logging.debug(traceback.format_exc())
             match = False
 
         any_matched = (any_matched or match)
@@ -1120,7 +1127,7 @@ def get_user_rank(user, subreddit):
     # fetch mod/contrib lists if necessary
     cached = False
     if sr_name in get_user_rank.moderator_cache:
-        cache_age = datetime.utcnow() - get_user_rank.cache_time[sr_name] 
+        cache_age = datetime.utcnow() - get_user_rank.cache_time[sr_name]
         if cache_age < timedelta(hours=1):
             cached = True
 
@@ -1287,10 +1294,19 @@ def get_enabled_subreddits(reload_mod_subs=True):
 
     return sr_dict
 
+def logging_trace(msg, *args, **kwargs):
+    """ Simple shorthand for custom logging level TRACE
+        More verbose than DEBUG
+    """
+    logging.log(logging.TRACE, msg, *args, **kwargs)
 
 def main():
     global r
+    logging.addLevelName(logging.DEBUG-1, "TRACE")
+    setattr(logging, "TRACE", logging.DEBUG-1)
+    setattr(logging, "trace", logging_trace)
     logging.config.fileConfig(path_to_cfg)
+
     # re.set_fallback_notification(re.FALLBACK_EXCEPTION)
 
     # which queues to check and the function to call
@@ -1312,6 +1328,7 @@ def main():
             break
         except Exception as e:
             logging.error('ERROR: {0}'.format(e))
+            logging.debug(traceback.format_exc())
 
     reports_mins = int(cfg_file.get('reddit', 'reports_check_period_mins'))
     reports_check_period = timedelta(minutes=reports_mins)
@@ -1331,7 +1348,7 @@ def main():
                 last_reports_check = time()
                 check_queues({'report': queue_funcs['report']},
                              sr_dict, cond_dict)
-                             
+
             check_queues({q: queue_funcs[q]
                           for q in queue_funcs
                           if q != 'report'},
@@ -1352,12 +1369,20 @@ def main():
                 HTTPError) as e:
             if not isinstance(e, HTTPError) or e.response.status_code == 403:
                 logging.info('Re-initializing due to {0}'.format(e))
+                logging.debug(traceback.format_exc())
                 sr_dict = get_enabled_subreddits()
+            else:
+                # whut? If we raise, the whole thing dies on 404s. Not good. Don't raise.
+                logging.warn('Something bad happened: {}'.format(e))
+                logging.warn(traceback.format_exc())
         except KeyboardInterrupt:
             raise
         except Exception as e:
             logging.error('ERROR: {0}'.format(e))
+            logging.debug(traceback.format_exc())
             session.rollback()
+
+        logging.info("Looping")
 
 
 if __name__ == '__main__':

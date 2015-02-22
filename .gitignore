@@ -1,3 +1,5 @@
 automoderator.cfg
 *.*~
 *.pyc
+ignore/*
+*.log*
