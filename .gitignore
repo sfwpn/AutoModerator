@@ -1,4 +1,4 @@
-automoderator.cfg
+*.cfg
 *.*~
 *.pyc
 ignore/*
