@@ -68,14 +68,17 @@ class Condition(object):
 
     _standard_cache = {}
     _standard_rows = None
+    _update_standards = False
 
     @classmethod
     def update_standards(cls):
         standards = session.query(StandardCondition).all()
-        if standards != cls._standard_rows:
+        if (standards != cls._standard_rows or
+                cls._update_standards):
             cls._standard_cache = {cond.name.lower(): yaml.safe_load(cond.yaml)
                                    for cond in standards}
             cls._standard_rows = standards
+            cls._update_standards = False
             return True
         return False
 
@@ -489,6 +492,120 @@ class Condition(object):
 
         return message
 
+def update_standards_from_wiki(sr, requester):
+    """Updates standard conditions from subreddit's wiki."""
+    global r
+    username = cfg_file.get('reddit', 'username')
+    sr_name = cfg_file.get('reddit', 'standards_wiki_subreddit')
+
+    if sr_name.lower() != sr:
+        send_error_message(requester, sr,
+            '/u/{0} is not configured to read standard conditions '
+            'from /r/{1}. Please contact /u/{2} for assistance.'
+            .format(username,
+                    sr,
+                    cfg_file.get('reddit', 'owner_username')))
+        return False
+
+    subreddit = r.get_subreddit(sr_name)
+
+    try:
+        page = subreddit.get_wiki_page(cfg_file.get('reddit', 'standards_wiki_page_name'))
+    except Exception:
+        send_error_message(requester, subreddit.display_name,
+            'The wiki page could not be accessed. Please ensure the page '
+            'http://www.reddit.com/r/{0}/wiki/{1} exists and that {2} '
+            'has the "wiki" mod permission to be able to access it.'
+            .format(subreddit.display_name,
+                    cfg_file.get('reddit', 'wiki_page_name'),
+                    username))
+        return False
+
+    html_parser = HTMLParser.HTMLParser()
+    page_content = html_parser.unescape(page.content_md)
+
+    # check that all the conditions are valid yaml
+    standard_defs = yaml.safe_load_all(page_content)
+    standard_num = 1
+    try:
+        for std_def in standard_defs:
+            standard_num += 1
+    except Exception as e:
+        indented = ''
+        for line in str(e).split('\n'):
+            indented += '    {0}\n'.format(line)
+        send_error_message(requester, subreddit.display_name,
+            'Error when reading conditions from wiki - '
+            'Syntax invalid in section #{0}:\n\n{1}'
+            .format(standard_num, indented))
+        return False
+
+    # reload and actually process the conditions
+    standard_defs = yaml.safe_load_all(page_content)
+    standard_num = 1
+    kept_sections = {}
+    for std_def in standard_defs:
+        # ignore any non-dict sections (can be used as comments, etc.)
+        if not isinstance(std_def, dict):
+            continue
+
+        std_def = lowercase_keys_recursively(std_def)
+
+        # make sure the standard condition has a name
+        # and validate its contents
+        try:
+            validate_type(std_def, 'name', basestring)
+            if not 'name' in std_def:
+                raise KeyError('Unnamed standard. You must specify a '
+                               '`name` for standard conditions.')
+            std_name = std_def.pop('name')
+            check_condition_valid(std_def)
+        except (KeyError, ValueError) as e:
+            send_error_message(requester, subreddit.display_name,
+                'Invalid condition in section #{0} - {1}'
+                .format(standard_num, e))
+            return False
+
+        # create a condition for final checks
+        condition = Condition(std_def)
+
+        # test to make sure that the final regex(es) are valid
+        for pattern in condition.match_patterns.values():
+            try:
+                re.compile(pattern)
+            except Exception as e:
+                send_error_message(requester, subreddit.display_name,
+                    'Generated an invalid regex from section #{0} - {1}'
+                    .format(standard_num, e))
+                return False
+
+        standard_num += 1
+        kept_sections.update({std_name: condition.yaml})
+
+    for std_name, std_yaml in kept_sections.iteritems():
+        # Update the standard, or add it if necessary
+        try:
+            db_standard = (session.query(StandardCondition)
+                           .filter(StandardCondition.name == std_name)
+                           .one())
+        except NoResultFound:
+            db_standard = StandardCondition()
+            db_standard.name = std_name
+            session.add(db_standard)
+
+        db_standard.yaml = std_yaml
+
+    session.commit()
+
+    # Set our update flag so everything gets flushed next loop
+    Condition._update_standards = True
+
+    r.send_message(requester,
+                   '{0} standards updated'.format(username),
+                   "{0}'s standards were successfully updated from /r/{1}"
+                   .format(username, subreddit.display_name))
+    return True
+
 
 def update_from_wiki(subreddit, requester):
     """Updates conditions from the subreddit's wiki."""
@@ -831,6 +948,26 @@ def process_messages():
                     if (message.author.name == owner_username or
                             message.author in subreddit.get_moderators()):
                         update_srs.add((sr_name.lower(), message.author.name))
+                    else:
+                        send_error_message(message.author, sr_name,
+                            'You do not moderate /r/{0}'.format(sr_name))
+                except HTTPError as e:
+                    send_error_message(message.author, sr_name,
+                        'Unable to access /r/{0}'.format(sr_name))
+            elif message.body.strip().lower() == 'update_standards':
+                # handle if they put in something like '/r/' in the subject
+                if '/' in message.subject:
+                    sr_name = message.subject[message.subject.rindex('/')+1:]
+                else:
+                    sr_name = message.subject
+
+                sr_name = sr_name.strip()
+
+                try:
+                    subreddit = r.get_subreddit(sr_name)
+                    if (message.author.name == owner_username or
+                            message.author in subreddit.get_moderators()):
+                        update_standards_from_wiki(sr_name.lower(), message.author.name)
                     else:
                         send_error_message(message.author, sr_name,
                             'You do not moderate /r/{0}'.format(sr_name))

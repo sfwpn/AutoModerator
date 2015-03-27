@@ -33,6 +33,11 @@ log_retention_days = 7
 # disclaimer: Will be appended to any comments/messages sent by the bot
 # owner_username: Your main account's username. This username gets some special
 #                 privileges for commands sent to the bot via PM
+# standards_wiki_subreddit: The subreddit whose wiki stores the standard conditions
+#                           configuration.
+# standards_wiki_page_name: The name of the wiki page where the standard conditions
+#                           are stored. The bot must have read permission.
+
 [reddit]
 user_agent = reddit_username
 username = reddit_username
@@ -43,6 +48,8 @@ wiki_page_name = %(username)s
 last_message = 1356998400
 disclaimer = *[I am a bot](/r/AutoModerator/comments/q11pu/what_is_automoderator/), and this action was performed automatically. Please [contact the moderators of this subreddit](/message/compose?to=%%2Fr%%2F{{subreddit}}) if you have any questions or concerns.*
 owner_username = your_username
+standards_wiki_subreddit = bot_subreddit
+standards_wiki_page_name = %(username)s-standards
 
 # Log File Configuration
 # For details, see: http://docs.python.org/2/library/logging.config.html
