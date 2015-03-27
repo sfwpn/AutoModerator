@@ -6,7 +6,6 @@ from sqlalchemy import Boolean, Column, DateTime, Enum, Integer, String, Text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 
-
 cfg_file = SafeConfigParser()
 path_to_cfg = os.path.abspath(os.path.dirname(sys.argv[0]))
 path_to_cfg = os.path.join(path_to_cfg, 'automoderator.cfg')
@@ -66,6 +65,7 @@ class StandardCondition(Base):
     __tablename__ = 'standard_conditions'
 
     name = Column(String(255), primary_key=True)
+    # last_update = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
     yaml = Column(Text)
 
 
