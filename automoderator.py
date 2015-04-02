@@ -29,6 +29,7 @@ class Condition(object):
                  'body_max_length': None,
                  'priority': 0,
                  'action': None,
+                 'report': None,
                  'comment': None,
                  'modmail': None,
                  'modmail_subject': 'AutoModerator notification',
@@ -90,8 +91,8 @@ class Condition(object):
     def requests_required(self):
         # all things that will require an additional request
         reqs = sum(1 for i in
-                    (self.action, self.user_conditions, self.comment,
-                     self.modmail, self.message,
+                    (self.action, self.report, self.user_conditions,
+                     self.comment, self.modmail, self.message,
                      (self.user_flair_text or self.user_flair_class),
                      (self.link_flair_text or self.link_flair_class))
                     if i)
@@ -310,6 +311,7 @@ class Condition(object):
         # matched, perform any actions
         # don't approve shadowbanned users' posts except in special cases
         if (self.action != 'approve' or
+                self.report or
                 not self.check_shadowbanned or
                 not user_is_shadowbanned(item.author) or
                 approve_shadowbanned):
@@ -395,6 +397,8 @@ class Condition(object):
         """
         if self.action or self.comment or self.modmail or self.message:
             log_actions = [self.action]
+        elif self.report:
+            log_actions = ['report']
         else:
             log_actions = []
 
@@ -405,9 +409,12 @@ class Condition(object):
             item.remove(True)
         elif self.action == 'approve':
             item.approve()
-        elif self.action == 'report':
+        if (self.action == 'report' or self.report):
             if self.report_reason:
                 reason = replace_placeholders(self.report_reason, item, match)
+                reason = reason[:100]
+            elif self.report:
+                reason = replace_placeholders(self.report, item, match)
                 reason = reason[:100]
             else:
                 reason = None
@@ -746,6 +753,8 @@ def check_condition_valid(cond):
     validate_type(cond, 'link_flair_class', basestring)
     validate_type(cond, 'user_flair_text', basestring)
     validate_type(cond, 'user_flair_class', basestring)
+
+    validate_type(cond, 'report', basestring)
 
     validate_value_in(cond, 'action', ('approve', 'remove', 'spam', 'report'))
     validate_value_in(cond, 'type', ('submission', 'comment', 'both'))
@@ -1127,7 +1136,8 @@ def check_items(queue, items, stop_time, sr_dict, cond_dict):
             # check all other conditions
             check_conditions(subreddit, item,
                              [c for c in conditions
-                              if c.action not in ('remove', 'spam')])
+                              if (c.action not in ('remove', 'spam')
+                                  or c.report)])
         except (praw.errors.ModeratorRequired,
                 praw.errors.ModeratorOrScopeRequired,
                 HTTPError) as e:
@@ -1182,7 +1192,8 @@ def check_conditions(subreddit, item, conditions, stop_after_match=False):
     for condition in conditions:
         # don't check remove/spam/report conditions on posts made by mods
         if (condition.moderators_exempt and
-                condition.action in ('remove', 'spam', 'report') and
+                (condition.action in ('remove', 'spam', 'report')
+                 or condition.report) and
                 item.author and
                 get_user_rank(item.author, item.subreddit) == 'moderator'):
             continue
@@ -1194,7 +1205,8 @@ def check_conditions(subreddit, item, conditions, stop_after_match=False):
             continue
 
         # don't bother checking condition if this action has already been done
-        if condition.action in performed_actions:
+        if (condition.action in performed_actions
+            or (condition.report and 'report' in performed_actions)):
                 continue
 
         # don't send repeat messages for the same item
@@ -1218,6 +1230,8 @@ def check_conditions(subreddit, item, conditions, stop_after_match=False):
             if match:
                 if condition.action:
                     performed_actions.add(condition.action)
+                if condition.report:
+                    performed_actions.add('report')
                 performed_yaml.add(condition.yaml)
 
             logging.trace('{0}\n  Result {1} in {2}'
@@ -1245,21 +1259,23 @@ def filter_conditions(conditions, queue):
     if queue == 'spam':
         return [c for c in conditions
                 if c.reports < 1 and
-                   c.action != 'report']
+                   (c.action != 'report'
+                    or not c.report)]
     elif queue == 'report':
         return [c for c in conditions
                 if c.action != 'report' and
-                   (c.action != 'approve' or c.reports > 0)]
+                   not c.report and
+                   ((c.action != 'approve' or c.report) or c.reports > 0)]
     elif queue == 'submission':
         return [c for c in conditions
                 if c.type in ('both', 'submission') and
                    c.reports < 1 and
-                   c.action != 'approve']
+                   (c.action != 'approve' or c.report)]
     elif queue == 'comment':
         return [c for c in conditions
                 if c.type in ('both', 'comment') and
                    c.reports < 1 and
-                   c.action != 'approve']
+                   (c.action != 'approve' or c.report)]
 
 
 def get_user_rank(user, subreddit):
