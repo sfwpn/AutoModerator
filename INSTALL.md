@@ -22,11 +22,11 @@ on a number of stale/outdated dependencies. It will probably break.
 
 5. Initialize database tables:
 
-        ```shell
-        $ python
-        >>> from models import *
-        >>> Base.metadata.create_all(engine)
-        ```
+    ```shell
+    $ python
+    >>> from models import *
+    >>> Base.metadata.create_all(engine)
+    ```
 
 6. Run the bot: `python automoderator.py`
 
