@@ -1,5 +1,8 @@
 # AutoModerator Installation Notes
 
+This is an old and technically unsupported project, that currently relies
+on a number of stale/outdated dependencies. It will probably break.
+
 ## Prereqs
 
 - Python 2.7.x
