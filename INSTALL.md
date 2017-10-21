@@ -3,6 +3,9 @@
 This is an old and technically unsupported project, that currently relies
 on a number of stale/outdated dependencies. It will probably break.
 
+Originally forked from http://github.com/Deimos/AutoModerator (defunct and
+deleted). LateNitePie/AutoModerator is extremely outdated, do not use.
+
 ## Dependencies
 
 - Python 2.7.x
