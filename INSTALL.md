@@ -3,7 +3,7 @@
 This is an old and technically unsupported project, that currently relies
 on a number of stale/outdated dependencies. It will probably break.
 
-## Prereqs
+## Dependencies
 
 - Python 2.7.x
 - praw 3.4.0 (later versions untested; pending update)
@@ -12,16 +12,17 @@ on a number of stale/outdated dependencies. It will probably break.
 
 ## Short Version
 
-1. Clone the repository
+1. Clone the repository.
 
-2. Install prereqs
+2. Install dependencies. Recommend `pip`. Specify version with `pip install praw==3.4.0`
 
 3. Create database. Example SQLite: `sqlite3 test.db ".databases"`
 
 4. Update configuration: `cp automoderator.cfg.example automoderator.cfg`
 
 5. Initialize database tables:
-        ```console
+
+        ```shell
         $ python
         >>> from models import *
         >>> Base.metadata.create_all(engine)
